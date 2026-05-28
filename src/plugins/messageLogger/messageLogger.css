@@ -57,3 +57,19 @@
 .vc-ml-viewer-danger-btn:hover {
     background-color: var(--button-danger-background-hover);
 }
+
+/*
+ * The new Modal (post #4206) does not give children a definite-height flex
+ * column like the legacy ModalRoot did, so the virtualized ListScrollerThin
+ * needs an explicit height to measure and fill.
+ */
+.vc-ml-viewer-list {
+    display: flex;
+    flex-direction: column;
+    height: 60vh;
+}
+
+.vc-ml-viewer-list > * {
+    flex: 1 1 auto;
+    min-height: 0;
+}

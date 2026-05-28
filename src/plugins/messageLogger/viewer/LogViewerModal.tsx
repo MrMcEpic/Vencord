@@ -6,8 +6,8 @@
 
 import ErrorBoundary from "@components/ErrorBoundary";
 import { Logger } from "@utils/Logger";
-import { closeModal, ModalCloseButton, ModalFooter, ModalHeader, ModalProps, ModalRoot, ModalSize, openModal } from "@utils/modal";
-import { Alerts, Button, Forms, GuildStore, ListScrollerThin, Select, TabBar, Text, TextInput, useMemo, useState } from "@webpack/common";
+import { RenderModalProps } from "@vencord/discord-types";
+import { Alerts, Forms, GuildStore, ListScrollerThin, Modal, openModal, Select, TabBar, TextInput, useMemo, useState } from "@webpack/common";
 
 import { removeEntriesFully } from "./actions";
 import { LogEntryRow } from "./LogEntryRow";
@@ -19,12 +19,11 @@ type Tab = "deleted" | "edited" | "saved" | "all";
 type Sort = "newest" | "oldest";
 
 interface ViewerProps {
-    modalProps: ModalProps;
+    modalProps: RenderModalProps;
     initialScope: ViewerScope;
     channelId?: string;
     guildId?: string;
     rowDensity: "compact" | "comfortable";
-    close(): void;
 }
 
 function getScopeLabel(scope: ViewerScope, channelId?: string, guildId?: string): string {
@@ -37,7 +36,7 @@ function getScopeLabel(scope: ViewerScope, channelId?: string, guildId?: string)
 }
 
 function ViewerInner(props: ViewerProps) {
-    const { modalProps, initialScope, channelId, guildId, rowDensity, close } = props;
+    const { modalProps, initialScope, channelId, guildId, rowDensity } = props;
 
     const [scope, setScope] = useState<ViewerScope>(initialScope);
     const [tab, setTab] = useState<Tab>(initialScope === "global" ? "all" : "deleted");
@@ -121,14 +120,24 @@ function ViewerInner(props: ViewerProps) {
     scopeDropdownOptions.push({ value: "global", label: "Everywhere" });
 
     return (
-        <ModalRoot {...modalProps} size={ModalSize.LARGE}>
-            <ModalHeader>
-                <Text variant="heading-lg/semibold" style={{ flexGrow: 1 }}>
-                    Message Log — {scopeLabel}
-                </Text>
-                <ModalCloseButton onClick={close} />
-            </ModalHeader>
-
+        <Modal
+            {...modalProps}
+            size="lg"
+            title={`Message Log — ${scopeLabel}`}
+            actions={[
+                {
+                    text: "Clear log (visible entries)",
+                    variant: "critical-primary",
+                    onClick: clearVisible,
+                    disabled: visible.length === 0
+                },
+                {
+                    text: "Close",
+                    variant: "secondary",
+                    onClick: () => modalProps.onClose()
+                }
+            ]}
+        >
             <TabBar
                 type="top"
                 look="brand"
@@ -179,7 +188,7 @@ function ViewerInner(props: ViewerProps) {
                 </div>
             </div>
 
-            <div style={{ flex: 1, minHeight: 360, display: "flex", flexDirection: "column" }}>
+            <div className="vc-ml-viewer-list">
                 {visible.length === 0 ? (
                     <div style={{ padding: 32, textAlign: "center" }}>
                         <Forms.FormText>
@@ -199,19 +208,7 @@ function ViewerInner(props: ViewerProps) {
                 )}
             </div>
 
-            <ModalFooter>
-                <div style={{ display: "flex", gap: 8, width: "100%", justifyContent: "space-between" }}>
-                    <Button
-                        color={Button.Colors.RED}
-                        disabled={visible.length === 0}
-                        onClick={clearVisible}
-                    >
-                        Clear log (visible entries)
-                    </Button>
-                    <Button onClick={close}>Close</Button>
-                </div>
-            </ModalFooter>
-        </ModalRoot>
+        </Modal>
     );
 }
 
@@ -223,7 +220,7 @@ export interface OpenLogViewerArgs {
 }
 
 export function openLogViewerModal(args: OpenLogViewerArgs): void {
-    const key = openModal(modalProps => (
+    openModal(modalProps => (
         <ErrorBoundary>
             <ViewerInner
                 modalProps={modalProps}
@@ -231,7 +228,6 @@ export function openLogViewerModal(args: OpenLogViewerArgs): void {
                 channelId={args.channelId}
                 guildId={args.guildId}
                 rowDensity={args.rowDensity ?? "compact"}
-                close={() => closeModal(key)}
             />
         </ErrorBoundary>
     ));

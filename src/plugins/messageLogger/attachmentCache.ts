@@ -252,7 +252,7 @@ export async function getCachedBlobUrl(attachmentId: string): Promise<string | n
             if (!rec) return null;
             const bytes = await Native.readAttachment(attachmentId);
             if (!bytes) return null;
-            const blob = new Blob([bytes], { type: rec.contentType });
+            const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: rec.contentType });
             const url = URL.createObjectURL(blob);
             blobUrlCache.set(attachmentId, url);
             return url;
