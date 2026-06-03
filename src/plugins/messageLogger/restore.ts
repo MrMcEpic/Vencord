@@ -64,20 +64,26 @@ async function restoreMessageInstance(entry: PersistedMessage, Ctor: any): Promi
  * Apply persisted entries for a channel to its live `MessageCache`.
  * Idempotent — re-running on the same channel is a no-op (all writes are
  * conditional on the entry not already being present in the cache).
+ *
+ * Returns true if the channel's messages were loaded and restore actually ran
+ * (whether or not anything needed injecting); false if it bailed early because
+ * the channel's messages weren't loaded yet. Callers use this so an early bail
+ * does NOT consume the double-apply dedup slot — otherwise an empty-on-arrival
+ * CHANNEL_SELECT would suppress the later LOAD_MESSAGES_SUCCESS that has data.
  */
-export async function applyEntriesToChannel(channelId: string): Promise<void> {
+export async function applyEntriesToChannel(channelId: string): Promise<boolean> {
     try {
         const channelMessages = MessageStore.getMessages(channelId) as any;
-        if (!channelMessages || channelMessages.loadingMore) return;
+        if (!channelMessages || channelMessages.loadingMore) return false;
         const liveArr = (channelMessages._array as any[]) ?? [];
-        if (liveArr.length === 0) return;
+        if (liveArr.length === 0) return false;
 
         const oldestId = minSnowflake(liveArr.map(m => m.id));
-        if (!oldestId) return;
+        if (!oldestId) return false;
         const since = snowflakeToMs(oldestId);
 
         const entries = await getEntriesForChannel(channelId, { since });
-        if (entries.length === 0) return;
+        if (entries.length === 0) return true;
 
         const Ctor = liveArr[0].constructor;
         let cache = (MessageCache as any).getOrCreate(channelId);
@@ -111,8 +117,10 @@ export async function applyEntriesToChannel(channelId: string): Promise<void> {
             (MessageCache as any).commit(cache);
             (MessageStore as any).emitChange();
         }
+        return true;
     } catch (e) {
         logger.error("applyEntriesToChannel failed for", channelId, e);
+        return false;
     }
 }
 
@@ -121,10 +129,20 @@ export async function applyEntriesToChannel(channelId: string): Promise<void> {
 const recentlyApplied = new Map<string, number>();
 const RECENT_THRESHOLD_MS = 250;
 
-function shouldSkipDoubleApply(channelId: string): boolean {
-    const now = Date.now();
+/** Read-only window check — no side effects. */
+function isRecentlyApplied(channelId: string): boolean {
     const last = recentlyApplied.get(channelId);
-    if (last != null && now - last < RECENT_THRESHOLD_MS) return true;
+    return last != null && Date.now() - last < RECENT_THRESHOLD_MS;
+}
+
+/**
+ * Record a successful apply for the dedup window. Called only AFTER
+ * applyEntriesToChannel actually ran with messages loaded, so an early-return
+ * (messages not loaded yet) leaves the slot free for the subsequent
+ * LOAD_MESSAGES_SUCCESS that does have data.
+ */
+function markApplied(channelId: string): void {
+    const now = Date.now();
     recentlyApplied.set(channelId, now);
     // Opportunistic eviction: when the map grows large, drop entries past the
     // dedup window. Power users browse hundreds of channels per session.
@@ -133,19 +151,18 @@ function shouldSkipDoubleApply(channelId: string): boolean {
             if (now - t > RECENT_THRESHOLD_MS) recentlyApplied.delete(k);
         }
     }
-    return false;
 }
 
 /** Flux handler — exported for the plugin's `flux:` block. */
 export async function onLoadMessagesSuccess({ channelId, messages }: { channelId: string; messages: any[]; }): Promise<void> {
     if (!messages || messages.length === 0) return;
-    if (shouldSkipDoubleApply(channelId)) return;
-    await applyEntriesToChannel(channelId);
+    if (isRecentlyApplied(channelId)) return;
+    if (await applyEntriesToChannel(channelId)) markApplied(channelId);
 }
 
 /** Flux handler — exported for the plugin's `flux:` block. */
 export async function onChannelSelect({ channelId }: { channelId: string | null; }): Promise<void> {
     if (!channelId) return;
-    if (shouldSkipDoubleApply(channelId)) return;
-    await applyEntriesToChannel(channelId);
+    if (isRecentlyApplied(channelId)) return;
+    if (await applyEntriesToChannel(channelId)) markApplied(channelId);
 }

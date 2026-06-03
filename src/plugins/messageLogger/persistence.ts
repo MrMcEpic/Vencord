@@ -6,6 +6,7 @@
 
 import { Logger } from "@utils/Logger";
 import { Message } from "@vencord/discord-types";
+import { ChannelStore } from "@webpack/common";
 
 import { AttachmentRecord, PersistedMessage, PlainMessage, SCHEMA_VERSION, WriteEvent } from "./types";
 
@@ -222,7 +223,7 @@ async function flushBuffer(): Promise<void> {
                 entry: {
                     id: m.id,
                     channelId: m.channel_id,
-                    guildId: m.guild_id ?? undefined,
+                    guildId: ChannelStore.getChannel(m.channel_id)?.guild_id ?? m.guild_id ?? undefined,
                     capturedAt: ev.capturedAt,
                     deleted: true,
                     message: serialize(ev.message),
@@ -262,7 +263,7 @@ async function flushBuffer(): Promise<void> {
                 entry: {
                     id: newM.id,
                     channelId: newM.channel_id,
-                    guildId: newM.guild_id ?? undefined,
+                    guildId: ChannelStore.getChannel(newM.channel_id)?.guild_id ?? newM.guild_id ?? undefined,
                     capturedAt: existing?.entry.capturedAt ?? ev.capturedAt,
                     deleted: false,
                     message: serialize(ev.newMessage),
@@ -294,6 +295,7 @@ async function flushBuffer(): Promise<void> {
 // ---- read / purge -----------------------------------------------------------
 
 export async function getEntriesForChannel(channelId: string, opts: { since?: number; } = {}): Promise<PersistedMessage[]> {
+    await init();
     if (disabled) return [];
     try {
         const db = await dbPromise!;
@@ -319,6 +321,7 @@ export async function getEntriesForChannel(channelId: string, opts: { since?: nu
  * cap. Callers (the viewer modal) filter and sort in JS afterwards.
  */
 export async function getAllEntries(): Promise<PersistedMessage[]> {
+    await init();
     if (disabled) return [];
     try {
         const db = await dbPromise!;

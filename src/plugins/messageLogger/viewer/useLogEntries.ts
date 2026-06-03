@@ -7,7 +7,7 @@
 import { getAllEntries, subscribeToChanges } from "@plugins/messageLogger/persistence";
 import { PersistedMessage } from "@plugins/messageLogger/types";
 import { useAwaiter } from "@utils/react";
-import { useEffect, useMemo, useReducer } from "@webpack/common";
+import { ChannelStore, useEffect, useMemo, useReducer } from "@webpack/common";
 
 export type ViewerScope = "channel" | "guild" | "global";
 
@@ -37,7 +37,11 @@ export function useLogEntries({ scope, channelId, guildId }: UseLogEntriesArgs):
 
     return useMemo(() => {
         if (scope === "channel" && channelId) return entries.filter(e => e.channelId === channelId);
-        if (scope === "guild" && guildId) return entries.filter(e => e.guildId === guildId);
+        // Fall back to deriving the guild from the entry's channelId when the stored
+        // guildId is missing. Deleted entries persisted before the write-side fix (and
+        // any whose channel was uncached at flush time) have guildId:undefined; without
+        // this they'd never match a server scope. See LogEntryRow's channel resolution.
+        if (scope === "guild" && guildId) return entries.filter(e => (e.guildId ?? ChannelStore.getChannel(e.channelId)?.guild_id) === guildId);
         return entries;
     }, [entries, scope, channelId, guildId]);
 }
