@@ -233,11 +233,43 @@ function addDeleteStyle() {
 
 const REMOVE_HISTORY_ID = "ml-remove-history";
 const TOGGLE_DELETE_STYLE_ID = "ml-toggle-style";
+
+/**
+ * Clears a message's history (edit + attachments)
+ *
+ * if the message was deleted, it will be completely removed from the UI and MessageStore
+ */
+function clearMessageHistory(msg: MLMessage) {
+    if (msg.deleted) {
+        FluxDispatcher.dispatch({
+            type: "MESSAGE_DELETE",
+            channelId: msg.channel_id,
+            id: msg.id,
+            mlDeleted: true
+        });
+    } else {
+        const attachments = msg.attachments?.filter((a: MLAttachment) => !a.deleted);
+
+        updateMessage(msg.channel_id, msg.id, { editHistory: [], attachments });
+    }
+}
+
+/**
+ * checks if a message has any history (deleted or edited)
+ * @param message the message to check
+ *
+ * @returns true if the message has any history, false otherwise
+ */
+function doesMessageHaveHistory(message: MLMessage): boolean {
+    return message.deleted || !!message.editHistory?.length || message.attachments?.some((a: MLAttachment) => a.deleted);
+
+}
+
 const patchMessageContextMenu: NavContextMenuPatchCallback = (children, props) => {
     const { message } = props;
-    const { deleted, editHistory, id, channel_id } = message;
+    const { deleted, id, channel_id } = message;
 
-    if (!deleted && !editHistory?.length) return;
+    if (!doesMessageHaveHistory(message)) return;
 
     toggle: {
         if (!deleted) break toggle;
@@ -262,16 +294,7 @@ const patchMessageContextMenu: NavContextMenuPatchCallback = (children, props) =
             label="Remove Message History"
             color="danger"
             action={() => {
-                if (deleted) {
-                    FluxDispatcher.dispatch({
-                        type: "MESSAGE_DELETE",
-                        channelId: channel_id,
-                        id,
-                        mlDeleted: true
-                    });
-                } else {
-                    updateMessage(channel_id, id, { editHistory: [] });
-                }
+                clearMessageHistory(message);
             }}
         />
     ));
@@ -311,27 +334,18 @@ const patchChannelContextMenu: NavContextMenuPatchCallback = (children, { channe
         />
     );
 
-    const messages = MessageStore.getMessages(channel.id) as MLMessage[];
-    if (messages?.some(msg => msg.deleted || msg.editHistory?.length)) {
+    const messages = MessageStore.getMessages(channel.id);
+    if (messages?.some(msg => doesMessageHaveHistory(msg))) {
         group.push(
             <Menu.MenuItem
                 id="vc-ml-clear-channel"
                 label="Clear Message Log"
                 color="danger"
                 action={() => {
-                    // Clear in-memory ghosts (red strikethrough deletes, edit history popovers)
+                    // Clear in-memory ghosts (red strikethrough deletes, edit history popovers,
+                    // deleted-attachment markers)
                     messages.forEach(msg => {
-                        if (msg.deleted)
-                            FluxDispatcher.dispatch({
-                                type: "MESSAGE_DELETE",
-                                channelId: channel.id,
-                                id: msg.id,
-                                mlDeleted: true
-                            });
-                        else
-                            updateMessage(channel.id, msg.id, {
-                                editHistory: []
-                            });
+                        clearMessageHistory(msg);
                     });
                     // Also drop persisted entries for this channel — otherwise they'd be
                     // restored next reload via the LOAD_MESSAGES_SUCCESS flux handler.
@@ -507,16 +521,12 @@ export default definePlugin({
         if (!newMessage.attachments?.length) {
             return oldMessage.attachments.map((a): MLAttachment => ({ ...a, deleted: true }));
         }
-        const attachments: MLAttachment[] = [];
-        for (const oldAttachment of oldMessage.attachments) {
-            const wasDeleted = newMessage.attachments.every(a => a.id !== oldAttachment.id);
-            if (wasDeleted) {
-                attachments.push({ ...oldAttachment, deleted: true });
-            } else {
-                attachments.push(oldAttachment);
-            }
-        }
-        return attachments;
+        return oldMessage.attachments
+            .map((oldAttachment): MLAttachment =>
+                newMessage.attachments.find(a => a.id === oldAttachment.id)
+                ?? { ...oldAttachment, deleted: true }
+            )
+            .concat(newMessage.attachments.filter(a => !oldMessage.attachments.some(o => o.id === a.id)));
     },
 
     handleDelete(cache: any, data: { ids: string[], id: string; mlDeleted?: boolean; }, isBulk: boolean) {
