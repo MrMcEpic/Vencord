@@ -6,6 +6,7 @@
 
 import { Logger } from "@utils/Logger";
 import { Message } from "@vencord/discord-types";
+import { findByCodeLazy } from "@webpack";
 import { MessageCache, MessageStore } from "@webpack/common";
 
 import { getCachedBlobUrl } from "./attachmentCache";
@@ -13,6 +14,9 @@ import { deserialize, deserializeEditHistory, getEntriesForChannel } from "./per
 import { PersistedMessage } from "./types";
 
 const logger = new Logger("MessageLogger");
+
+// Discord's normalizer that receiveMessage runs on every message (rebuilds author into a User record, etc.)
+const createMessageRecord: (message: any) => Message = findByCodeLazy(".createFromServer(", ".isBlockedForMessage", "messageReference:");
 
 const DISCORD_EPOCH = 1_420_070_400_000n;
 
@@ -31,6 +35,39 @@ function minSnowflake(ids: string[]): string | null {
         if (big < minBig) { minBig = big; minId = ids[i]; }
     }
     return minId;
+}
+
+/** Pick the chronologically-latest snowflake from an array using BigInt compare. */
+function maxSnowflake(ids: string[]): string | null {
+    if (ids.length === 0) return null;
+    let maxId = ids[0];
+    let maxBig = BigInt(maxId);
+    for (let i = 1; i < ids.length; i++) {
+        const big = BigInt(ids[i]);
+        if (big > maxBig) { maxBig = big; maxId = ids[i]; }
+    }
+    return maxId;
+}
+
+/**
+ * Insert a message into a ChannelMessages at its chronological position.
+ * Discord's `receiveMessage` can't be used for this: it only sorts behind an
+ * experiment flag (otherwise it appends to the bottom), it's a no-op while
+ * `hasMoreAfter` is set, and it truncates as a side effect.
+ */
+function insertSorted(cache: any, message: Message): any {
+    const id = BigInt(message.id);
+    return cache.mutate((c: any) => {
+        c._map[message.id] = message;
+        const arr = c._array as Message[];
+        let lo = 0, hi = arr.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (BigInt(arr[mid].id) < id) lo = mid + 1;
+            else hi = mid;
+        }
+        arr.splice(lo, 0, message);
+    }, true);
 }
 
 /**
@@ -78,9 +115,13 @@ export async function applyEntriesToChannel(channelId: string): Promise<boolean>
         const liveArr = (channelMessages._array as any[]) ?? [];
         if (liveArr.length === 0) return false;
 
-        const oldestId = minSnowflake(liveArr.map(m => m.id));
-        if (!oldestId) return false;
+        const liveIds = liveArr.map(m => m.id);
+        const oldestId = minSnowflake(liveIds);
+        const newestId = maxSnowflake(liveIds);
+        if (!oldestId || !newestId) return false;
         const since = snowflakeToMs(oldestId);
+        const oldestBig = BigInt(oldestId);
+        const newestBig = BigInt(newestId);
 
         const entries = await getEntriesForChannel(channelId, { since });
         if (entries.length === 0) return true;
@@ -105,8 +146,14 @@ export async function applyEntriesToChannel(channelId: string): Promise<boolean>
                 mutated = true;
             } else if (entry.deleted) {
                 if ((cache as any).has?.(entry.id)) continue;
+                // `since` filters on capture (deletion) time, so a message sent before the
+                // loaded window but deleted later still gets here. Only inject messages that
+                // fall inside the window; anything newer is fine unless we're viewing history.
+                const idBig = BigInt(entry.id);
+                if (idBig < oldestBig) continue;
+                if (channelMessages.hasMoreAfter && idBig > newestBig) continue;
                 const instance = await restoreMessageInstance(entry, Ctor);
-                cache = cache.receiveMessage(instance).update(entry.id, (m: any) => m
+                cache = insertSorted(cache, createMessageRecord(instance)).update(entry.id, (m: any) => m
                     .set("deleted", true)
                     .set("attachments", (m.attachments ?? []).map((a: any) => ({ ...a, deleted: true }))));
                 mutated = true;
