@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Text } from "@components/Text";
 import { setSaved } from "@plugins/messageLogger/persistence";
 import { PersistedMessage } from "@plugins/messageLogger/types";
 import { Logger } from "@utils/Logger";
-import { ChannelRouter, ChannelStore, ContextMenuApi, IconUtils, Menu, MessageActions, MessageStore, Text, Timestamp, UserStore } from "@webpack/common";
+import { ChannelRouter, ChannelStore, ContextMenuApi, IconUtils, Menu, MessageActions, MessageStore, Timestamp, UserStore } from "@webpack/common";
 
 import { removeEntryFully } from "./actions";
 
@@ -123,17 +124,17 @@ export function LogEntryRow({ entry, density }: LogEntryRowProps) {
             />
             <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                    <Text variant="text-md/semibold" style={{ color: "var(--header-primary)" }}>{displayName}</Text>
-                    <Text variant="text-xs/normal" style={{ color: "var(--text-muted)" }}>{formatChannelLabel(entry.channelId)}</Text>
-                    <Text variant="text-xs/normal" style={{ color: "var(--text-muted)" }}>
+                    <Text size="md" weight="semibold" style={{ color: "var(--header-primary)" }}>{displayName}</Text>
+                    <Text size="xs" weight="normal" style={{ color: "var(--text-muted)" }}>{formatChannelLabel(entry.channelId)}</Text>
+                    <Text size="xs" weight="normal" style={{ color: "var(--text-muted)" }}>
                         <Timestamp timestamp={new Date(entry.capturedAt)} />
                     </Text>
                     {entry.deleted && (
-                        <Text variant="text-xs/semibold" style={{ color: "var(--status-danger)" }}>DELETED</Text>
+                        <Text size="xs" weight="semibold" style={{ color: "var(--status-danger)" }}>DELETED</Text>
                     )}
                 </div>
                 <Text
-                    variant={density === "comfortable" ? "text-md/normal" : "text-sm/normal"}
+                    size={density === "comfortable" ? "md" : "sm"}
                     style={{
                         marginTop: 2,
                         textDecoration: entry.deleted ? "line-through" : undefined,

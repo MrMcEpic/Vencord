@@ -22,8 +22,10 @@ import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/Co
 import { updateMessage } from "@api/MessageUpdater";
 import { definePluginSettings } from "@api/Settings";
 import { disableStyle, enableStyle } from "@api/Styles";
+import { Button } from "@components/Button";
 import ErrorBoundary from "@components/ErrorBoundary";
-import { DeleteIcon, EyeIcon } from "@components/Icons";
+import { EyeIcon, HistoryIcon } from "@components/Icons";
+import { Paragraph } from "@components/Paragraph";
 import { Devs, SUPPORT_CATEGORY_ID, VENBOT_USER_ID } from "@utils/constants";
 import { getIntlMessage } from "@utils/discord";
 import { Logger } from "@utils/Logger";
@@ -31,7 +33,7 @@ import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { Message, MessageAttachment } from "@vencord/discord-types";
 import { findCssClassesLazy } from "@webpack";
-import { Alerts, AuthenticationStore, Button, ChannelStore, FluxDispatcher, Forms, Menu, MessageStore, Parser, SelectedChannelStore, Timestamp, UserStore, useStateFromStores } from "@webpack/common";
+import { Alerts, AuthenticationStore, ChannelStore, FluxDispatcher, Menu, MessageStore, Parser, SelectedChannelStore, Timestamp, UserStore, useStateFromStores } from "@webpack/common";
 
 import * as attachmentCache from "./attachmentCache";
 import overlayStyle from "./deleteStyleOverlay.css?managed";
@@ -299,8 +301,8 @@ const patchMessageContextMenu: NavContextMenuPatchCallback = (children, props) =
         <Menu.MenuItem
             id={REMOVE_HISTORY_ID}
             key={REMOVE_HISTORY_ID}
-            label="Remove Message History"
-            leadingAccessory={{ type: "icon", icon: DeleteIcon }}
+            label="Clear Message History"
+            leadingAccessory={{ type: "icon", icon: HistoryIcon }}
             color="danger"
             action={() => {
                 clearMessageHistory(message);
@@ -381,17 +383,17 @@ export default definePlugin({
     name: "MessageLogger",
     description: "Logs deleted and edited messages, with optional persistence across client reloads.",
     tags: ["Chat", "Utility"],
-    authors: [Devs.rushii, Devs.Ven, Devs.AutumnVN, Devs.Nickyux, Devs.Kyuuhachi, Devs.sadan],
+    authors: [Devs.rushii, Devs.Ven, Devs.AutumnVN, Devs.Nickyux, Devs.Kyuuhachi, Devs.sadan, Devs.f3tch],
     dependencies: ["MessageUpdaterAPI"],
     settings,
     settingsAboutComponent: () => (
         <>
-            <Forms.FormText style={{ marginBottom: 8 }}>
+            <Paragraph style={{ marginBottom: 8 }}>
                 Browse, search, and clear your captured deletes and edits.
-            </Forms.FormText>
+            </Paragraph>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                 <Button
-                    size={Button.Sizes.SMALL}
+                    size="small"
                     onClick={() => openLogViewerModal({
                         scope: "global",
                         rowDensity: settings.store.viewerRowDensity as "compact" | "comfortable",
@@ -400,20 +402,20 @@ export default definePlugin({
                     Open Message Log
                 </Button>
                 <Button
-                    size={Button.Sizes.SMALL}
+                    size="small"
                     onClick={() => void exportImport.exportLog()}
                 >
                     Export log
                 </Button>
                 <Button
-                    size={Button.Sizes.SMALL}
+                    size="small"
                     onClick={() => exportImport.importLogFromFilePicker()}
                 >
                     Import log
                 </Button>
                 <Button
-                    size={Button.Sizes.SMALL}
-                    color={Button.Colors.RED}
+                    size="small"
+                    variant="dangerPrimary"
                     onClick={() => {
                         Alerts.show({
                             title: "Clear attachment cache?",
@@ -482,6 +484,27 @@ export default definePlugin({
         window.removeEventListener("beforeunload", persistence.flushSync);
         persistence.flushSync();
         attachmentCache.shutdown();
+    },
+
+    messagePopoverButton: {
+        icon: HistoryIcon,
+        render(message) {
+            const current = MessageStore.getMessage(message.channel_id, message.id) as MLMessage | undefined;
+
+            if (!current || !doesMessageHaveHistory(current))
+                return null;
+
+            return {
+                label: "Clear history",
+                icon: HistoryIcon,
+                onClick: () => {
+                    const latest = MessageStore.getMessage(message.channel_id, message.id) as MLMessage | undefined;
+                    if (!latest) return;
+
+                    clearMessageHistory(latest);
+                }
+            };
+        }
     },
 
     renderEdits: ErrorBoundary.wrap(({ message: { id: messageId, channel_id: channelId } }: { message: Message; }) => {

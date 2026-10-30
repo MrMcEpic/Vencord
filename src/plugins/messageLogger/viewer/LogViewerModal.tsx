@@ -5,9 +5,10 @@
  */
 
 import ErrorBoundary from "@components/ErrorBoundary";
+import { Paragraph } from "@components/Paragraph";
 import { Logger } from "@utils/Logger";
 import { RenderModalProps } from "@vencord/discord-types";
-import { Alerts, Forms, GuildStore, ListScrollerThin, Modal, openModal, Select, TabBar, TextInput, useMemo, useState } from "@webpack/common";
+import { Alerts, GuildStore, ListScrollerThin, Modal, openModal, Select, TabBar, TextInput, useMemo, useState } from "@webpack/common";
 
 import { removeEntriesFully } from "./actions";
 import { LogEntryRow } from "./LogEntryRow";
@@ -191,9 +192,9 @@ function ViewerInner(props: ViewerProps) {
             <div className="vc-ml-viewer-list">
                 {visible.length === 0 ? (
                     <div style={{ padding: 32, textAlign: "center" }}>
-                        <Forms.FormText>
+                        <Paragraph>
                             {baseEntries.length === 0 ? "No messages logged yet." : "No matches found."}
-                        </Forms.FormText>
+                        </Paragraph>
                     </div>
                 ) : (
                     <ListScrollerThin
